@@ -1,0 +1,178 @@
+﻿// Decompiled with JetBrains decompiler
+// Type: GorillaTag.Cosmetics.FingerFlexEvent
+// Assembly: Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+// MVID: 97A23EB5-635F-4763-8E85-4A9FA332BC9B
+// Assembly location: C:\Program Files (x86)\Steam\steamapps\common\Gorilla Tag\Gorilla Tag_Data\Managed\Assembly-CSharp.dll
+
+using System;
+using UnityEngine;
+using UnityEngine.Events;
+
+#nullable disable
+namespace GorillaTag.Cosmetics;
+
+public class FingerFlexEvent : MonoBehaviourTick
+{
+  [SerializeField]
+  public bool ignoreTransferable;
+  [SerializeField]
+  private FingerFlexEvent.FingerType fingerType = FingerFlexEvent.FingerType.Index;
+  public FingerFlexEvent.Listener[] eventListeners = new FingerFlexEvent.Listener[0];
+  private VRRig _rig;
+  private TransferrableObject parentTransferable;
+
+  private void Awake()
+  {
+    this._rig = this.GetComponentInParent<VRRig>();
+    this.parentTransferable = this.GetComponentInParent<TransferrableObject>();
+  }
+
+  private bool IsMyItem() => (UnityEngine.Object) this._rig != (UnityEngine.Object) null && this._rig.isOfflineVRRig;
+
+  public override void Tick()
+  {
+    for (int index = 0; index < this.eventListeners.Length; ++index)
+      this.FireEvents(this.eventListeners[index]);
+  }
+
+  private void FireEvents(FingerFlexEvent.Listener listener)
+  {
+    if (!listener.syncForEveryoneInRoom && !this.IsMyItem())
+      return;
+    if (!this.ignoreTransferable && listener.fireOnlyWhileHeld && (bool) (UnityEngine.Object) this.parentTransferable && !this.parentTransferable.InHand() && listener.eventType == FingerFlexEvent.EventType.OnFingerReleased)
+    {
+      if ((double) listener.fingerRightLastValue > (double) listener.fingerReleaseValue)
+      {
+        listener.listenerComponent?.Invoke(false, 0.0f);
+        listener.fingerRightLastValue = 0.0f;
+      }
+      if ((double) listener.fingerLeftLastValue > (double) listener.fingerReleaseValue)
+      {
+        listener.listenerComponent?.Invoke(true, 0.0f);
+        listener.fingerLeftLastValue = 0.0f;
+      }
+    }
+    if (!this.ignoreTransferable && (bool) (UnityEngine.Object) this.parentTransferable && listener.fireOnlyWhileHeld && !this.parentTransferable.InHand())
+      return;
+    switch (this.fingerType)
+    {
+      case FingerFlexEvent.FingerType.Thumb:
+        float calcT1 = this._rig.leftThumb.calcT;
+        float calcT2 = this._rig.rightThumb.calcT;
+        this.FireEvents(listener, calcT1, calcT2);
+        break;
+      case FingerFlexEvent.FingerType.Index:
+        float calcT3 = this._rig.leftIndex.calcT;
+        float calcT4 = this._rig.rightIndex.calcT;
+        this.FireEvents(listener, calcT3, calcT4);
+        break;
+      case FingerFlexEvent.FingerType.Middle:
+        float calcT5 = this._rig.leftMiddle.calcT;
+        float calcT6 = this._rig.rightMiddle.calcT;
+        this.FireEvents(listener, calcT5, calcT6);
+        break;
+      case FingerFlexEvent.FingerType.IndexAndMiddleMin:
+        float leftFinger = Mathf.Min(this._rig.leftIndex.calcT, this._rig.leftMiddle.calcT);
+        float rightFinger = Mathf.Min(this._rig.rightIndex.calcT, this._rig.rightMiddle.calcT);
+        this.FireEvents(listener, leftFinger, rightFinger);
+        break;
+    }
+  }
+
+  private void FireEvents(FingerFlexEvent.Listener listener, float leftFinger, float rightFinger)
+  {
+    if (this.ignoreTransferable && listener.checkLeftHand || (bool) (UnityEngine.Object) this.parentTransferable && this.FingerFlexValidation(true))
+      this.CheckFingerValue(listener, leftFinger, true, ref listener.fingerLeftLastValue);
+    else if (this.ignoreTransferable && !listener.checkLeftHand || (bool) (UnityEngine.Object) this.parentTransferable && this.FingerFlexValidation(false))
+    {
+      this.CheckFingerValue(listener, rightFinger, false, ref listener.fingerRightLastValue);
+    }
+    else
+    {
+      this.CheckFingerValue(listener, leftFinger, true, ref listener.fingerLeftLastValue);
+      this.CheckFingerValue(listener, rightFinger, false, ref listener.fingerRightLastValue);
+    }
+  }
+
+  private void CheckFingerValue(
+    FingerFlexEvent.Listener listener,
+    float fingerValue,
+    bool isLeft,
+    ref float lastValue)
+  {
+    if ((double) fingerValue > (double) listener.fingerFlexValue)
+      ++listener.frameCounter;
+    switch (listener.eventType)
+    {
+      case FingerFlexEvent.EventType.OnFingerFlexed:
+        if ((double) fingerValue > (double) listener.fingerFlexValue && (double) lastValue < (double) listener.fingerFlexValue)
+        {
+          UnityEvent<bool, float> listenerComponent = listener.listenerComponent;
+          if (listenerComponent != null)
+          {
+            listenerComponent.Invoke(isLeft, fingerValue);
+            break;
+          }
+          break;
+        }
+        break;
+      case FingerFlexEvent.EventType.OnFingerReleased:
+        if ((double) fingerValue <= (double) listener.fingerReleaseValue && (double) lastValue > (double) listener.fingerReleaseValue)
+        {
+          listener.listenerComponent?.Invoke(isLeft, fingerValue);
+          listener.frameCounter = 0;
+          break;
+        }
+        break;
+      case FingerFlexEvent.EventType.OnFingerFlexStayed:
+        if ((double) fingerValue > (double) listener.fingerFlexValue && (double) lastValue >= (double) listener.fingerFlexValue && listener.frameCounter % listener.frameInterval == 0)
+        {
+          listener.listenerComponent?.Invoke(isLeft, fingerValue);
+          listener.frameCounter = 0;
+          break;
+        }
+        break;
+    }
+    lastValue = fingerValue;
+  }
+
+  private bool FingerFlexValidation(bool isLeftHand)
+  {
+    return (!this.parentTransferable.InLeftHand() || isLeftHand) && !(!this.parentTransferable.InLeftHand() & isLeftHand);
+  }
+
+  [Serializable]
+  public class Listener
+  {
+    public FingerFlexEvent.EventType eventType;
+    public UnityEvent<bool, float> listenerComponent;
+    public float fingerFlexValue = 0.75f;
+    public float fingerReleaseValue = 0.01f;
+    [Tooltip("How many frames should pass to fire a finger flex stayed event")]
+    public int frameInterval = 20;
+    [Tooltip("This event will be fired for everyone in the room (synced) by default unless you uncheck this box so that it will be fired only for the local player.")]
+    public bool syncForEveryoneInRoom = true;
+    [Tooltip("Fire these events only when the item is held in hand, only works if there is a transferable component somewhere on the object or its parent.")]
+    public bool fireOnlyWhileHeld = true;
+    [Tooltip("Whether to check the left hand or the right hand, only works if \"ignoreTransferable\" is true.")]
+    public bool checkLeftHand;
+    internal int frameCounter;
+    internal float fingerRightLastValue;
+    internal float fingerLeftLastValue;
+  }
+
+  public enum EventType
+  {
+    OnFingerFlexed,
+    OnFingerReleased,
+    OnFingerFlexStayed,
+  }
+
+  private enum FingerType
+  {
+    Thumb,
+    Index,
+    Middle,
+    IndexAndMiddleMin,
+  }
+}
